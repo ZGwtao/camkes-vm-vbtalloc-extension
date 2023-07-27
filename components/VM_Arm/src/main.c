@@ -6,6 +6,7 @@
  */
 #include <autoconf.h>
 #include <arm_vm/gen_config.h>
+#include <sel4vm/gen_config.h>
 #include <sel4muslcsys/gen_config.h>
 
 #include <stdio.h>
@@ -46,6 +47,7 @@
 #include <sel4vmmplatsupport/drivers/cross_vm_connection.h>
 #include <sel4vmmplatsupport/arch/guest_boot_init.h>
 #include <sel4vmmplatsupport/arch/guest_reboot.h>
+#include <sel4vmmplatsupport/guest_memory_util.h>
 #include <sel4vmmplatsupport/arch/guest_vcpu_fault.h>
 #include <sel4vmmplatsupport/guest_vcpu_util.h>
 
@@ -909,6 +911,9 @@ static int load_vm_images(vm_t *vm, const vm_config_t *vm_config)
 
     /* Load kernel */
     printf("Loading Kernel: \'%s\'\n", vm_config->files.kernel);
+    if (config_set(CONFIG_DEBUG_BUILD)) {
+        printf("  >> position: %0lx\n  >> szie: %0lx\n", vm_config->ram.base, vm_config->ram.size);
+    }
     guest_kernel_image_t kernel_image_info;
     err = vm_load_guest_kernel(vm, vm_config->files.kernel, vm_config->ram.base,
                                0, &kernel_image_info);
@@ -933,6 +938,9 @@ static int load_vm_images(vm_t *vm, const vm_config_t *vm_config)
         printf("Loading Initrd: \'%s\'\n", vm_config->files.initrd);
         err = vm_load_guest_module(vm, vm_config->files.initrd,
                                    vm_config->initrd_addr, 0, &initrd_image);
+        if (config_set(CONFIG_DEBUG_BUILD)) {
+            printf("  >> position: %0lx\n  >> size: %0lx\n", vm_config->initrd_addr, initrd_image.size);
+        }
         void *initrd = (void *)initrd_image.load_paddr;
         if (!initrd || err) {
             return -1;
@@ -958,9 +966,24 @@ static int load_vm_images(vm_t *vm, const vm_config_t *vm_config)
         }
         printf("Loading Generated DTB\n");
         vm_ram_mark_allocated(vm, vm_config->dtb_addr, sizeof(gen_dtb_buf));
+        /***
+         * Only frames for loading device-tree image will be mapped in RAM,
+         * mappings of frames for the rest of RAM are deferred and page fault
+         * will happen (stage-2)
+         */
+        if (config_set(CONFIG_LIB_SEL4VM_DEFER_MEMORY_MAP)) {
+            err = maybe_map_deferred_pages_at(vm, vm_config->dtb_addr, sizeof(gen_dtb_buf), NULL, NULL);
+            if (err) {
+                ZF_LOGE("Error: Failed to map deferred frames for dtb");
+                return -1;
+            }
+        }
         vm_ram_touch(vm, vm_config->dtb_addr, sizeof(gen_dtb_buf), load_generated_dtb,
                      gen_dtb_buf);
         dtb = vm_config->dtb_addr;
+        if (config_set(CONFIG_DEBUG_BUILD)) {
+            printf("  >> position: %0lx\n  >> size: %0lx\n", vm_config->dtb_addr, sizeof(gen_dtb_buf));
+        }
     } else if (vm_config->provide_dtb) {
         printf("Loading DTB: \'%s\'\n", vm_config->files.dtb);
 
