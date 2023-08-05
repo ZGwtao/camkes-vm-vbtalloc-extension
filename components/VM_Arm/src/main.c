@@ -911,15 +911,17 @@ static int load_vm_images(vm_t *vm, const vm_config_t *vm_config)
 
     /* Load kernel */
     printf("Loading Kernel: \'%s\'\n", vm_config->files.kernel);
-    if (config_set(CONFIG_DEBUG_BUILD)) {
-        printf("  >> position: %0lx\n  >> szie: %0lx\n", vm_config->ram.base, vm_config->ram.size);
-    }
     guest_kernel_image_t kernel_image_info;
     err = vm_load_guest_kernel(vm, vm_config->files.kernel, vm_config->ram.base,
                                0, &kernel_image_info);
     entry = kernel_image_info.kernel_image.load_paddr;
     if (!entry || err) {
         return -1;
+    }
+    if (config_set(CONFIG_DEBUG_BUILD)) {
+        printf("  >> position: %0lx\n  >> szie: %0lx\n", \
+                                        kernel_image_info.kernel_image.load_paddr,
+                                        kernel_image_info.kernel_image.size);
     }
 
     /* generate a chosen node */
