@@ -451,6 +451,22 @@ static bool add_uts(const vm_config_t *vm_config, vka_t *vka, seL4_CPtr cap,
 
     allocman_t *allocman = vka->data;
 
+#ifdef CONFIG_LIB_ALLOCMAN_ALLOW_PRE_ALLOC
+    int error;
+    // 4M ~ 1G size untypeds are normally be used as memory
+    if (size_bits > 22 && size_bits < 32 && is_guest_ram) {
+        printf("paddr: %08x, %d\n", paddr, size_bits);
+        // If CapBuddy is enabled, then we try to perform some spliting operations here.
+        if (config_set(CONFIG_LIB_ALLOCMAN_ALLOW_POOL_OPERATIONS)) {
+            for (int j = 0; j < BIT(size_bits - 22); ++j) {
+                error = allocman_utspace_try_create_virtual_bitmap_tree(allocman, &path, 22 - seL4_PageBits, paddr + j * (1024 * 4096));
+                ZF_LOGF_IF(error, "Could not create virtual-bitmap-tree from untyped");
+            }
+            return error;
+        }
+    }
+#endif
+
     return allocman_utspace_add_uts(allocman, 1, &path, &size_bits, &paddr,
                                     ut_type);
 }
